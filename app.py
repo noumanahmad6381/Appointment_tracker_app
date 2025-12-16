@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import os
 
 st.set_page_config(page_title="German Embassy Islamabad Appointment Tracker", page_icon="📅", layout="wide")
 
 DB_PATH = "appointments.db"
+CSV_PATH = "appointments_backup.csv"
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -23,6 +25,10 @@ def get_conn():
     """)
     return conn
 
+def save_to_csv(df):
+    """Save dataframe to CSV for backup"""
+    df.to_csv(CSV_PATH, index=False, encoding='utf-8')
+
 def to_iso(d):
     return d.isoformat() if isinstance(d, (date, datetime)) else (d or "")
 
@@ -34,6 +40,18 @@ def parse_iso(s):
     except Exception:
         return None
 
+def calculate_months_between(start_date, end_date):
+    """Calculate months between two dates"""
+    if not start_date or not end_date:
+        return None
+    try:
+        months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+        if end_date.day < start_date.day:
+            months -= 1
+        return max(0, months)
+    except:
+        return None
+
 def seed_if_empty(conn):
     cur = conn.execute("SELECT COUNT(*) FROM appointments")
     n = cur.fetchone()[0]
@@ -41,7 +59,6 @@ def seed_if_empty(conn):
         return
 
     seed = [
-        # From your example screenshots
         {"name":"Saeed Ahmad", "reference_no":"1999", "apply_date":"2023-11-13", "received_date":"2025-12-16", "interview_date":"2026-02-12"},
         {"name":"", "reference_no":"1996", "apply_date":"2023-11-10", "received_date":"2025-12-16", "interview_date":"2026-02-09"},
         {"name":"", "reference_no":"1986", "apply_date":"", "received_date":"", "interview_date":"2026-02-04"},
@@ -77,9 +94,17 @@ def load_df(conn):
     if "created_at" in df.columns:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
 
-    # Sort: latest interview date first; missing dates last
-    df["_sort"] = df["interview_date"].apply(lambda x: x if x is not None else date.min)
-    df = df.sort_values(["_sort", "created_at"], ascending=[False, False]).drop(columns=["_sort"])
+    # Calculate months between apply and interview
+    df["months_wait"] = df.apply(
+        lambda row: calculate_months_between(row["apply_date"], row["interview_date"]), 
+        axis=1
+    )
+
+    # Sort: latest received date first, then interview date
+    df["_sort_received"] = df["received_date"].apply(lambda x: x if x is not None else date.min)
+    df["_sort_interview"] = df["interview_date"].apply(lambda x: x if x is not None else date.min)
+    df = df.sort_values(["_sort_received", "_sort_interview"], ascending=[False, False])
+    df = df.drop(columns=["_sort_received", "_sort_interview"])
 
     return df
 
@@ -104,54 +129,192 @@ def fmt(d):
     if d is None:
         return "—"
     if hasattr(d, "strftime"):
-        return d.strftime("%d %b %Y")
+        return d.strftime("%d-%b-%Y")
     return str(d)
 
+# Initialize connection
 conn = get_conn()
 seed_if_empty(conn)
 
-st.title("🇩🇪 German Embassy Islamabad Appointment Tracker")
-st.caption("Add entries below. Records are shown automatically with the **latest interview date on top**. (No delete / no CSV export.)")
+# Custom CSS for better styling
+st.markdown("""
+    <style>
+    .main-header {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 2rem;
+    }
+    .dua-text {
+        font-size: 1.2rem;
+        font-style: italic;
+        text-align: center;
+        color: #555;
+        margin-bottom: 1rem;
+    }
+    .compact-table {
+        font-size: 0.9rem;
+    }
+    .dataframe td {
+        padding: 0.5rem !important;
+    }
+    .stDataFrame {
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 10px;
+    }
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+    }
+    .success-box {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #c3e6cb;
+        margin: 10px 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
+# Header with Dua
+st.markdown('<div class="main-header"><h1>🇩🇪 German Embassy Islamabad Appointment Tracker</h1></div>', unsafe_allow_html=True)
+st.markdown('<div class="dua-text">🤲 May Allah make it easy for all people who are waiting to meet their loved ones. Ameen.</div>', unsafe_allow_html=True)
+
+# Sidebar for adding new appointments
 with st.sidebar:
-    st.header("➕ Add new entry")
+    st.markdown("### 📝 Add New Appointment")
+    st.caption("Quick and simple form for everyone")
+    
     with st.form("add_form", clear_on_submit=True):
-        name = st.text_input("Name (optional)", placeholder="e.g., Saeed Ahmad")
-        reference_no = st.text_input("Reference No. (optional)", placeholder="e.g., 1999")
-        apply_date = st.date_input("Apply date (optional)", value=None)
-        received_date = st.date_input("Appointment receive date (optional)", value=None)
-        interview_date = st.date_input("Interview date (optional)", value=None)
-        submitted = st.form_submit_button("Save")
+        # Simple inputs
+        name = st.text_input("Name (Optional)", placeholder="Leave empty if unknown")
+        reference_no = st.text_input("Reference Number", placeholder="Required*", help="This is important for tracking")
+        
+        # Get today's date for smart defaults
+        today = date.today()
+        
+        # Appointment receive date (most important)
+        received_date = st.date_input(
+            "📅 Appointment Receive Date*",
+            value=today,
+            help="When did you receive the appointment letter?"
+        )
+        
+        # Calculate suggested dates
+        suggested_apply_date = received_date - timedelta(days=25*30)  # ~25 months before
+        suggested_interview_date = received_date + timedelta(days=60)  # ~2 months after
+        
+        # Apply date with smart suggestion
+        apply_date = st.date_input(
+            "📅 Apply Date (Optional)",
+            value=None,
+            min_value=date(2010, 1, 1),
+            max_value=received_date,
+            help=f"Suggested: {suggested_apply_date.strftime('%d %b %Y')} (~25 months before receive)"
+        )
+        
+        # Interview date with smart suggestion
+        interview_date = st.date_input(
+            "📅 Interview Date (Optional)",
+            value=None,
+            min_value=received_date,
+            help=f"Suggested: {suggested_interview_date.strftime('%d %b %Y')} (~2 months after receive)"
+        )
+        
+        submitted = st.form_submit_button("💾 Save Appointment", type="primary")
+        
+        if submitted:
+            if not reference_no.strip():
+                st.error("Please enter Reference Number!")
+            elif not received_date:
+                st.error("Please select Appointment Receive Date!")
+            else:
+                insert_row(conn, name, reference_no, apply_date, received_date, interview_date)
+                st.markdown('<div class="success-box">✅ Appointment saved successfully!</div>', unsafe_allow_html=True)
+                st.rerun()
 
-    if submitted:
-        insert_row(conn, name, reference_no, apply_date, received_date, interview_date)
-        st.success("Saved ✅ (cannot be deleted)")
-        st.rerun()
-
+# Load and display data
 df = load_df(conn)
 
 if len(df) == 0:
-    st.info("No records yet. Add one from the left sidebar.")
-    st.stop()
+    st.info("No appointments yet. Add one from the sidebar!")
+else:
+    # Save to CSV backup
+    save_to_csv(df)
+    
+    # Show summary stats
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        total = len(df)
+        st.metric("Total Appointments", total)
+    with col2:
+        latest_received = df['received_date'].max()
+        st.metric("Latest Receive Date", fmt(latest_received))
+    with col3:
+        latest_interview = df['interview_date'].max()
+        st.metric("Latest Interview Date", fmt(latest_interview))
+    with col4:
+        avg_wait = df['months_wait'].mean()
+        st.metric("Avg Wait (Months)", f"{avg_wait:.1f}" if pd.notna(avg_wait) else "—")
+    
+    st.markdown("---")
+    st.markdown("### 📋 All Appointments (Latest First)")
+    
+    # Create display dataframe with formatted columns
+    display_df = df.copy()
+    display_df = display_df[['name', 'reference_no', 'apply_date', 'received_date', 'interview_date', 'months_wait']]
+    
+    # Format dates
+    for date_col in ['apply_date', 'received_date', 'interview_date']:
+        display_df[date_col] = display_df[date_col].apply(fmt)
+    
+    # Format name column
+    display_df['name'] = display_df['name'].apply(lambda x: x if x and str(x).strip() else "—")
+    
+    # Format months wait
+    display_df['months_wait'] = display_df['months_wait'].apply(
+        lambda x: f"{int(x)} months" if pd.notna(x) else "—"
+    )
+    
+    # Rename columns for display
+    display_df.columns = ['Name', 'Ref No.', 'Apply Date', 'Receive Date', 'Interview Date', 'Total Wait']
+    
+    # Display as compact table
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Name": st.column_config.TextColumn(width="small"),
+            "Ref No.": st.column_config.TextColumn(width="small"),
+            "Apply Date": st.column_config.TextColumn(width="small"),
+            "Receive Date": st.column_config.TextColumn(width="small"),
+            "Interview Date": st.column_config.TextColumn(width="small"),
+            "Total Wait": st.column_config.TextColumn(width="small"),
+        }
+    )
+    
+    # Download CSV button
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Full Data (CSV)",
+        data=csv,
+        file_name=f"appointments_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        help="Download complete database for backup"
+    )
+    
+    # Auto-save notification
+    st.caption(f"💾 Data auto-saved to: `{CSV_PATH}` | Last updated: {datetime.now().strftime('%d %b %Y %H:%M')}")
 
-# Simple, clean cards
-for _, r in df.iterrows():
-    title = r["name"].strip() if str(r.get("name","")).strip() else "Anonymous"
-
-    with st.container(border=True):
-        top = st.columns([2.5, 1.4, 1.4])
-        with top[0]:
-            st.subheader(title)
-        with top[1]:
-            ref = str(r.get("reference_no","")).strip()
-            st.markdown(f"**Reference:** `{ref}`" if ref else "**Reference:** —")
-        with top[2]:
-            st.markdown(f"**Interview:** {fmt(r.get('interview_date'))}")
-
-        cols = st.columns(3)
-        with cols[0]:
-            st.write(f"**Applied:** {fmt(r.get('apply_date'))}")
-        with cols[1]:
-            st.write(f"**Received:** {fmt(r.get('received_date'))}")
-        with cols[2]:
-            st.write("")  # spacer
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; font-size: 0.9rem;">
+    <p>Made with ❤️ for the community | Updates automatically | Simple & Easy to use</p>
+    <p>📌 Tip: Always fill at least <b>Reference Number</b> and <b>Appointment Receive Date</b></p>
+</div>
+""", unsafe_allow_html=True)
