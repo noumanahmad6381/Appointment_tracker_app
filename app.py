@@ -88,6 +88,9 @@ def seed_if_empty(conn):
         {"name":"", "reference_no":"1980", "apply_date":"2023-11-01", "received_date":"", "interview_date":""},
         {"name":"", "reference_no":"1975", "apply_date":"2023-10-23", "received_date":"2025-12-11", "interview_date":"2026-01-20"},
         {"name":"", "reference_no":"1971", "apply_date":"2023-10-13", "received_date":"2025-12-11", "interview_date":"2026-01-13"},
+        {"name":"", "reference_no":"1955", "apply_date":"2023-09-25", "received_date":"", "interview_date":""},
+        {"name":"", "reference_no":"1940", "apply_date":"2023-09-10", "received_date":"", "interview_date":""},
+        {"name":"", "reference_no":"1935", "apply_date":"2023-09-05", "received_date":"", "interview_date":""},
     ]
 
     for r in seed:
@@ -126,7 +129,14 @@ def load_df(conn):
         df.at[idx, "wait_days"] = days
 
     # Sort by reference number (descending) instead of interview date
-    df["_sort_ref"] = df["reference_no"].apply(lambda x: int(x) if str(x).isdigit() else 0)
+    # Handle non-numeric reference numbers
+    def ref_to_int(ref):
+        try:
+            return int(ref) if ref and str(ref).strip() else 0
+        except:
+            return 0
+    
+    df["_sort_ref"] = df["reference_no"].apply(ref_to_int)
     df = df.sort_values("_sort_ref", ascending=False)
     df = df.drop(columns=["_sort_ref"])
 
@@ -337,6 +347,15 @@ st.markdown("""
             margin-bottom: 0.2rem;
         }
     }
+    
+    /* Admin login styling */
+    .admin-login-box {
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 0.3rem;
+        margin-bottom: 0.5rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -345,38 +364,85 @@ col1, col2 = st.columns([4, 1])
 with col1:
     st.markdown('<div class="compact-header"><div class="header-title">🇩🇪 German Embassy Islamabad Appointments</div></div>', unsafe_allow_html=True)
 
-# Simple admin login using Streamlit secrets - FIXED empty label
+# Initialize session state for admin
+if 'admin_authenticated' not in st.session_state:
+    st.session_state.admin_authenticated = False
+if 'admin_login_open' not in st.session_state:
+    st.session_state.admin_login_open = False
+
+# Get admin password securely from Streamlit secrets or environment
+def get_admin_password():
+    """Get admin password from Streamlit secrets or environment variable"""
+    try:
+        # Try Streamlit secrets first
+        return st.secrets["ADMIN_PASSWORD"]
+    except:
+        try:
+            # Try environment variable
+            return os.environ.get("ADMIN_PASSWORD", "NoEm1234")
+        except:
+            # Default fallback (not recommended for production)
+            return "NoEm1234"
+
+ADMIN_PASSWORD = get_admin_password()
+
+# Admin login - HIDDEN FROM REGULAR USERS
 with col2:
-    if 'admin_authenticated' not in st.session_state:
-        st.session_state.admin_authenticated = False
-    
+    # Only show admin toggle if not already authenticated
     if not st.session_state.admin_authenticated:
-        admin_pass = st.text_input("Admin Password", type="password", placeholder="🔐", 
-                                  label_visibility="collapsed", key="admin_pass")
-        if admin_pass == st.secrets.get("ADMIN_PASSWORD", ""):
-            st.session_state.admin_authenticated = True
+        if st.button("🔐", help="Admin login", key="admin_toggle"):
+            st.session_state.admin_login_open = not st.session_state.admin_login_open
             st.rerun()
     else:
         if st.button("🚪", help="Logout", key="logout_btn"):
             st.session_state.admin_authenticated = False
+            st.session_state.admin_login_open = False
             st.rerun()
+
+# Show login form if toggled open
+if st.session_state.admin_login_open and not st.session_state.admin_authenticated:
+    with st.expander("Admin Login", expanded=True):
+        admin_pass = st.text_input("Enter Admin Password:", type="password", key="admin_pass_input")
+        col_login1, col_login2 = st.columns(2)
+        with col_login1:
+            if st.button("Login", key="admin_login_btn", use_container_width=True):
+                if admin_pass == ADMIN_PASSWORD:
+                    st.session_state.admin_authenticated = True
+                    st.session_state.admin_login_open = False
+                    st.rerun()
+                else:
+                    st.error("Incorrect password")
+        with col_login2:
+            if st.button("Cancel", key="admin_cancel", use_container_width=True):
+                st.session_state.admin_login_open = False
+                st.rerun()
 
 st.markdown('<div class="dua-text">🤲 May Allah make it easy for all of us in this waiting period. Ameen!</div>', unsafe_allow_html=True)
 
-# Sidebar - ultra compact
+# Sidebar - FIXED SEQUENCE: Apply date, Received date, Appointment in embassy
 with st.sidebar:
-    st.markdown("**+ Add New Appointment**")
+    st.markdown("**+ Add Appointment Record**")
     
     with st.form("add_form", clear_on_submit=True):
         name = st.text_input("Name", placeholder="(Optional)")
         reference_no = st.text_input("Reference Number*", placeholder="Required")
         
         today = date.today()
-        received_date = st.date_input("Received Date*", value=today)
-        apply_date = st.date_input("Apply Date*", value=today - timedelta(days=25*30), 
-                                  max_value=received_date)
-        appointment_date = st.date_input("Appointment in Embassy*", value=today + timedelta(days=60), 
-                                      min_value=received_date)
+        
+        # FIXED SEQUENCE: Apply Date first
+        apply_date = st.date_input("Apply Date*", 
+                                  value=today - timedelta(days=25*30),
+                                  min_value=date(2010, 1, 1))
+        
+        # Received Date second (must be after or equal to Apply Date)
+        received_date = st.date_input("Received Date*", 
+                                     value=today,
+                                     min_value=apply_date)
+        
+        # Appointment in Embassy third (must be after or equal to Received Date)
+        appointment_date = st.date_input("Appointment in Embassy*", 
+                                        value=today + timedelta(days=60),
+                                        min_value=received_date)
         
         submitted = st.form_submit_button("💾 Save Appointment")
         
@@ -390,14 +456,14 @@ with st.sidebar:
 # Load data
 df = load_df(conn)
 
-# Debug: Check how many records we have
-st.markdown(f"**Database has {len(df)} appointments**")
-
 if len(df) == 0:
     st.info("No appointments yet.")
 else:
     # Save backup
     save_to_csv(df)
+    
+    # Show how many appointments we have
+    st.markdown(f"**Showing {len(df)} appointments**")
     
     # COMFORTABLE STATS BAR
     valid_received = df['received_date'].dropna()
@@ -420,10 +486,12 @@ else:
         </div>
         <div class="stat-item">
             <div class="stat-label">Latest Appointment</div>
+            <div class="stat-label">at Embassy</div>
             <div class="stat-value">{fmt(latest_appointment)}</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Average Wait Time</div>
+            <div class="stat-label">Average Wait</div>
+            <div class="stat-label">Time</div>
             <div class="stat-value">{f"{avg_wait:.0f} months" if avg_wait else "—"}</div>
         </div>
     </div>
@@ -455,11 +523,11 @@ else:
     display_df['Wait Time'] = display_df.apply(format_wait, axis=1)
     
     # Use full words for column headers with corrected name
-    display_df.columns = ['Name', 'Reference', 'Apply Date', 'Receive Date', 'Appointment in Embassy', '_m', '_d', 'Wait Time']
+    display_df.columns = ['Name', 'Reference', 'Apply Date', 'Receive Date', 'Embassy Date', '_m', '_d', 'Wait Time']
     
-    # Display the table - MOST IMPORTANT PART
+    # Display the table - MOST IMPORTANT PART - FIXED COLUMN NAMES
     st.dataframe(
-        display_df[['Name', 'Reference', 'Apply Date', 'Receive Date', 'Appointment in Embassy', 'Wait Time']],
+        display_df[['Name', 'Reference', 'Apply Date', 'Receive Date', 'Embassy Date', 'Wait Time']],
         width='stretch',
         hide_index=True,
         column_config={
@@ -467,12 +535,12 @@ else:
             "Reference": st.column_config.TextColumn(width="small"),
             "Apply Date": st.column_config.TextColumn(width="small"),
             "Receive Date": st.column_config.TextColumn(width="small"),
-            "Appointment in Embassy": st.column_config.TextColumn(width="small"),
+            "Embassy Date": st.column_config.TextColumn(width="small"),
             "Wait Time": st.column_config.TextColumn(width="small"),
         }
     )
     
-    # Minimal admin panel (only when authenticated)
+    # ADMIN PANEL - ONLY VISIBLE WHEN AUTHENTICATED
     if st.session_state.admin_authenticated:
         st.markdown("---")
         st.markdown("**🔧 Admin Panel**")
@@ -480,24 +548,32 @@ else:
         # Simple delete option
         appointment_options = []
         for idx, row in df.iterrows():
-            ref = str(row['reference_no']) if pd.notna(row['reference_no']) else "No Reference"
-            appointment_options.append((row['id'], ref))
+            ref = str(row['reference_no']) if pd.notna(row['reference_no']) and str(row['reference_no']).strip() else "No Reference"
+            name = mask_name(row['name'])
+            appointment_options.append((row['id'], f"{ref} - {name}"))
         
         if appointment_options:
-            selected_ref = st.selectbox("Select appointment to delete:", [opt[1] for opt in appointment_options])
+            selected_option = st.selectbox("Select appointment to delete:", 
+                                         [opt[1] for opt in appointment_options],
+                                         key="delete_select")
             
-            if selected_ref:
+            if selected_option:
                 # Find the ID
                 selected_id = None
-                for opt_id, opt_ref in appointment_options:
-                    if opt_ref == selected_ref:
+                for opt_id, opt_display in appointment_options:
+                    if opt_display == selected_option:
                         selected_id = opt_id
                         break
                 
-                if selected_id and st.button("🗑️ Delete Appointment", type="secondary"):
-                    delete_row(conn, selected_id)
-                    st.success("Appointment deleted successfully")
-                    st.rerun()
+                if selected_id:
+                    # Show warning and confirmation
+                    st.warning("⚠️ This action cannot be undone!")
+                    confirm = st.checkbox("I confirm I want to delete this appointment", key="confirm_delete")
+                    
+                    if confirm and st.button("🗑️ Delete Appointment", type="secondary"):
+                        delete_row(conn, selected_id)
+                        st.success("Appointment deleted successfully")
+                        st.rerun()
 
 # Minimal footer
 st.markdown("""
