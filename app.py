@@ -72,12 +72,22 @@ def seed_if_empty(conn):
         return
 
     seed = [
+        # Existing appointments
         {"name":"Saeed Ahmad", "reference_no":"1999", "apply_date":"2023-11-13", "received_date":"2025-12-16", "interview_date":"2026-02-12"},
         {"name":"", "reference_no":"1996", "apply_date":"2023-11-10", "received_date":"2025-12-16", "interview_date":"2026-02-09"},
         {"name":"", "reference_no":"1986", "apply_date":"", "received_date":"", "interview_date":"2026-02-04"},
         {"name":"Honey Badal", "reference_no":"", "apply_date":"2023-10-03", "received_date":"2025-11-17", "interview_date":"2025-12-16"},
         {"name":"Osama Adil", "reference_no":"", "apply_date":"2023-10-04", "received_date":"2025-11-16", "interview_date":"2025-12-16"},
         {"name":"", "reference_no":"1950", "apply_date":"2023-09-30", "received_date":"", "interview_date":"2025-12-11"},
+        
+        # New appointments from the posts - ONLY data explicitly mentioned
+        {"name":"", "reference_no":"1993", "apply_date":"", "received_date":"", "interview_date":"2026-02-06"},
+        {"name":"", "reference_no":"1991", "apply_date":"2023-11-08", "received_date":"2025-12-11", "interview_date":""},
+        {"name":"", "reference_no":"1885", "apply_date":"", "received_date":"", "interview_date":"2025-08-13"},
+        {"name":"", "reference_no":"1979", "apply_date":"2023-10-31", "received_date":"", "interview_date":"2026-01-28"},
+        {"name":"", "reference_no":"1980", "apply_date":"2023-11-01", "received_date":"", "interview_date":""},
+        {"name":"", "reference_no":"1975", "apply_date":"2023-10-23", "received_date":"2025-12-11", "interview_date":"2026-01-20"},
+        {"name":"", "reference_no":"1971", "apply_date":"2023-10-13", "received_date":"2025-12-11", "interview_date":"2026-01-13"},
     ]
 
     for r in seed:
@@ -115,10 +125,10 @@ def load_df(conn):
         df.at[idx, "wait_months"] = months
         df.at[idx, "wait_days"] = days
 
-    df["_sort_received"] = df["received_date"].apply(lambda x: x if pd.notna(x) else date.min)
-    df["_sort_interview"] = df["interview_date"].apply(lambda x: x if pd.notna(x) else date.min)
-    df = df.sort_values(["_sort_received", "_sort_interview"], ascending=[False, False])
-    df = df.drop(columns=["_sort_received", "_sort_interview"])
+    # Sort by reference number (descending) instead of interview date
+    df["_sort_ref"] = df["reference_no"].apply(lambda x: int(x) if str(x).isdigit() else 0)
+    df = df.sort_values("_sort_ref", ascending=False)
+    df = df.drop(columns=["_sort_ref"])
 
     return df
 
@@ -186,49 +196,52 @@ st.markdown("""
     }
     
     .header-title {
-        font-size: 0.9rem !important;
+        font-size: 2.2rem !important;
         font-weight: bold;
         color: #333;
         margin: 0;
+        padding: 0.4rem 0;
+        line-height: 1.1;
     }
     
     .dua-text {
-        font-size: 0.75rem;
+        font-size: 0.95rem;
         font-style: italic;
         text-align: center;
         color: #555;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.6rem;
         padding: 0;
     }
     
-    /* SUPER COMPACT Stats bar - single line */
+    /* Stats bar - comfortable spacing */
     .stats-bar {
         display: flex;
         justify-content: space-between;
-        margin: 0.2rem 0 0.4rem 0;
-        font-size: 0.7rem;
+        margin: 0.3rem 0 0.8rem 0;
+        font-size: 0.85rem;
         background: #f8f9fa;
-        padding: 0.15rem 0.3rem;
-        border-radius: 4px;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
         border: 1px solid #e0e0e0;
-        line-height: 1.2;
+        line-height: 1.3;
     }
     
     .stat-item {
         text-align: center;
         flex: 1;
-        padding: 0.05rem;
+        padding: 0.1rem;
     }
     
     .stat-label {
-        font-size: 0.6rem;
+        font-size: 0.75rem;
         color: #666;
-        margin-bottom: 0.05rem;
+        margin-bottom: 0.15rem;
         white-space: nowrap;
+        font-weight: 500;
     }
     
     .stat-value {
-        font-size: 0.75rem;
+        font-size: 0.9rem;
         font-weight: bold;
         color: #333;
         white-space: nowrap;
@@ -236,17 +249,17 @@ st.markdown("""
     
     /* Table - most important part */
     .dataframe {
-        font-size: 0.8rem !important;
+        font-size: 0.85rem !important;
     }
     
     .dataframe td {
-        padding: 0.15rem 0.2rem !important;
-        font-size: 0.75rem !important;
+        padding: 0.2rem 0.3rem !important;
+        font-size: 0.8rem !important;
     }
     
     .dataframe th {
-        padding: 0.2rem 0.3rem !important;
-        font-size: 0.7rem !important;
+        padding: 0.3rem 0.4rem !important;
+        font-size: 0.8rem !important;
         background-color: #f0f0f0 !important;
     }
     
@@ -276,41 +289,43 @@ st.markdown("""
     /* Mobile optimizations */
     @media (max-width: 768px) {
         .header-title {
-            font-size: 0.8rem !important;
+            font-size: 1.6rem !important;
+            padding: 0.3rem 0;
         }
         
         .dua-text {
-            font-size: 0.7rem !important;
+            font-size: 0.9rem !important;
         }
         
         .stats-bar {
-            font-size: 0.65rem;
-            padding: 0.1rem 0.2rem;
+            font-size: 0.75rem;
+            padding: 0.3rem 0.4rem;
         }
         
         .stat-label {
-            font-size: 0.55rem;
-        }
-        
-        .stat-value {
             font-size: 0.7rem;
         }
         
+        .stat-value {
+            font-size: 0.8rem;
+        }
+        
         .dataframe td {
-            font-size: 0.7rem !important;
-            padding: 0.1rem 0.15rem !important;
+            font-size: 0.75rem !important;
+            padding: 0.15rem 0.2rem !important;
         }
         
         .dataframe th {
-            font-size: 0.65rem !important;
-            padding: 0.15rem 0.2rem !important;
+            font-size: 0.75rem !important;
+            padding: 0.2rem 0.3rem !important;
         }
     }
     
     /* Very small phones */
     @media (max-width: 480px) {
         .header-title {
-            font-size: 0.75rem !important;
+            font-size: 1.3rem !important;
+            padding: 0.2rem 0;
         }
         
         .stats-bar {
@@ -319,7 +334,7 @@ st.markdown("""
         
         .stat-item {
             flex: 0 0 50%;
-            margin-bottom: 0.1rem;
+            margin-bottom: 0.2rem;
         }
     }
     </style>
@@ -330,13 +345,13 @@ col1, col2 = st.columns([4, 1])
 with col1:
     st.markdown('<div class="compact-header"><div class="header-title">🇩🇪 German Embassy Islamabad Appointments</div></div>', unsafe_allow_html=True)
 
-# Simple admin login using Streamlit secrets
+# Simple admin login using Streamlit secrets - FIXED empty label
 with col2:
     if 'admin_authenticated' not in st.session_state:
         st.session_state.admin_authenticated = False
     
     if not st.session_state.admin_authenticated:
-        admin_pass = st.text_input("", type="password", placeholder="🔐", 
+        admin_pass = st.text_input("Admin Password", type="password", placeholder="🔐", 
                                   label_visibility="collapsed", key="admin_pass")
         if admin_pass == st.secrets.get("ADMIN_PASSWORD", ""):
             st.session_state.admin_authenticated = True
@@ -346,34 +361,37 @@ with col2:
             st.session_state.admin_authenticated = False
             st.rerun()
 
-st.markdown('<div class="dua-text">🤲 May Allah make it easy for all waiting</div>', unsafe_allow_html=True)
+st.markdown('<div class="dua-text">🤲 May Allah make it easy for all of us in this waiting period. Ameen!</div>', unsafe_allow_html=True)
 
 # Sidebar - ultra compact
 with st.sidebar:
-    st.markdown("**+ Add**")
+    st.markdown("**+ Add New Appointment**")
     
     with st.form("add_form", clear_on_submit=True):
         name = st.text_input("Name", placeholder="(Optional)")
-        reference_no = st.text_input("Ref*", placeholder="Required")
+        reference_no = st.text_input("Reference Number*", placeholder="Required")
         
         today = date.today()
-        received_date = st.date_input("Recv*", value=today)
-        apply_date = st.date_input("Apply*", value=today - timedelta(days=25*30), 
+        received_date = st.date_input("Received Date*", value=today)
+        apply_date = st.date_input("Apply Date*", value=today - timedelta(days=25*30), 
                                   max_value=received_date)
-        interview_date = st.date_input("Int*", value=today + timedelta(days=60), 
+        appointment_date = st.date_input("Appointment in Embassy*", value=today + timedelta(days=60), 
                                       min_value=received_date)
         
-        submitted = st.form_submit_button("💾 Save")
+        submitted = st.form_submit_button("💾 Save Appointment")
         
         if submitted:
             if not reference_no.strip():
-                st.error("Ref required")
+                st.error("Reference Number is required")
             else:
-                insert_row(conn, name, reference_no, apply_date, received_date, interview_date)
+                insert_row(conn, name, reference_no, apply_date, received_date, appointment_date)
                 st.rerun()
 
 # Load data
 df = load_df(conn)
+
+# Debug: Check how many records we have
+st.markdown(f"**Database has {len(df)} appointments**")
 
 if len(df) == 0:
     st.info("No appointments yet.")
@@ -381,32 +399,32 @@ else:
     # Save backup
     save_to_csv(df)
     
-    # SUPER COMPACT STATS BAR (minimal space)
+    # COMFORTABLE STATS BAR
     valid_received = df['received_date'].dropna()
-    valid_interview = df['interview_date'].dropna()
+    valid_appointment = df['interview_date'].dropna()
     valid_wait = df['wait_months'].dropna()
     
     latest_received = valid_received.max() if not valid_received.empty else None
-    latest_interview = valid_interview.max() if not valid_interview.empty else None
+    latest_appointment = valid_appointment.max() if not valid_appointment.empty else None
     avg_wait = valid_wait.mean() if not valid_wait.empty else None
     
     st.markdown(f"""
     <div class="stats-bar">
         <div class="stat-item">
-            <div class="stat-label">Total</div>
+            <div class="stat-label">Total Appointments</div>
             <div class="stat-value">{len(df)}</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Latest Recv</div>
+            <div class="stat-label">Latest Received</div>
             <div class="stat-value">{fmt(latest_received)}</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Latest Int</div>
-            <div class="stat-value">{fmt(latest_interview)}</div>
+            <div class="stat-label">Latest Appointment</div>
+            <div class="stat-value">{fmt(latest_appointment)}</div>
         </div>
         <div class="stat-item">
-            <div class="stat-label">Avg Wait</div>
-            <div class="stat-value">{f"{avg_wait:.0f}m" if avg_wait else "—"}</div>
+            <div class="stat-label">Average Wait Time</div>
+            <div class="stat-value">{f"{avg_wait:.0f} months" if avg_wait else "—"}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -429,44 +447,44 @@ else:
         months = row['wait_months']
         days = row['wait_days']
         if pd.notna(months) and pd.notna(days):
-            return f"{int(months)}m{int(days)}d" if days > 0 else f"{int(months)}m"
+            return f"{int(months)}m {int(days)}d" if days > 0 else f"{int(months)}m"
         elif pd.notna(months):
             return f"{int(months)}m"
         return "—"
     
-    display_df['Wait'] = display_df.apply(format_wait, axis=1)
+    display_df['Wait Time'] = display_df.apply(format_wait, axis=1)
     
-    # Rename columns for compact display
-    display_df.columns = ['Name', 'Ref', 'Apply', 'Receive', 'Interview', '_m', '_d', 'Wait']
+    # Use full words for column headers with corrected name
+    display_df.columns = ['Name', 'Reference', 'Apply Date', 'Receive Date', 'Appointment in Embassy', '_m', '_d', 'Wait Time']
     
     # Display the table - MOST IMPORTANT PART
     st.dataframe(
-        display_df[['Name', 'Ref', 'Apply', 'Receive', 'Interview', 'Wait']],
+        display_df[['Name', 'Reference', 'Apply Date', 'Receive Date', 'Appointment in Embassy', 'Wait Time']],
         width='stretch',
         hide_index=True,
         column_config={
             "Name": st.column_config.TextColumn(width="small"),
-            "Ref": st.column_config.TextColumn(width="small"),
-            "Apply": st.column_config.TextColumn(width="small"),
-            "Receive": st.column_config.TextColumn(width="small"),
-            "Interview": st.column_config.TextColumn(width="small"),
-            "Wait": st.column_config.TextColumn(width="small"),
+            "Reference": st.column_config.TextColumn(width="small"),
+            "Apply Date": st.column_config.TextColumn(width="small"),
+            "Receive Date": st.column_config.TextColumn(width="small"),
+            "Appointment in Embassy": st.column_config.TextColumn(width="small"),
+            "Wait Time": st.column_config.TextColumn(width="small"),
         }
     )
     
     # Minimal admin panel (only when authenticated)
     if st.session_state.admin_authenticated:
         st.markdown("---")
-        st.markdown("**🔧 Admin**")
+        st.markdown("**🔧 Admin Panel**")
         
         # Simple delete option
         appointment_options = []
         for idx, row in df.iterrows():
-            ref = str(row['reference_no']) if pd.notna(row['reference_no']) else "No Ref"
+            ref = str(row['reference_no']) if pd.notna(row['reference_no']) else "No Reference"
             appointment_options.append((row['id'], ref))
         
         if appointment_options:
-            selected_ref = st.selectbox("Select to delete:", [opt[1] for opt in appointment_options])
+            selected_ref = st.selectbox("Select appointment to delete:", [opt[1] for opt in appointment_options])
             
             if selected_ref:
                 # Find the ID
@@ -476,14 +494,14 @@ else:
                         selected_id = opt_id
                         break
                 
-                if selected_id and st.button("🗑️ Delete", type="secondary"):
+                if selected_id and st.button("🗑️ Delete Appointment", type="secondary"):
                     delete_row(conn, selected_id)
-                    st.success("Deleted")
+                    st.success("Appointment deleted successfully")
                     st.rerun()
 
 # Minimal footer
 st.markdown("""
-<div style="text-align: center; color: #999; font-size: 0.6rem; margin-top: 0.5rem;">
-    Community App
+<div style="text-align: center; color: #999; font-size: 0.7rem; margin-top: 0.5rem;">
+    Community App - German Embassy Islamabad Appointment Tracker
 </div>
 """, unsafe_allow_html=True)
